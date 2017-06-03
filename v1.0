@@ -1,0 +1,133 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+using System.IO;
+
+using DBQA.Predictors;
+using CNTokenizer;
+
+namespace DBQA
+{
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            string rootFolder = @"..\..\..\..\";
+            
+            string QApairFile = Path.Combine(rootFolder, "training", "nlpcc-iccpol-2016.dbqa.testing-data");
+            string QApairFile1 = Path.Combine(rootFolder, "training", "BoP2017-DBQA.train.txt");
+
+            string stopwordFile = Path.Combine(rootFolder, "model", "dbqa", "chStopWordsSimple.txt");
+            string stopwordFile1 = Path.Combine(rootFolder, "model", "dbqa", "stopwords2.txt");
+            string word2vecFile = Path.Combine(rootFolder, "model", "dbqa", "dbqa.word2vec");
+            string word2vecFile1 = Path.Combine(rootFolder, "model", "dbqa", "train_v0.5.bin");
+            string paraphraseFile = Path.Combine(rootFolder, "model", "dbqa", "dbqa.paraphrase");
+            string wordMT_e2fFile = Path.Combine(rootFolder, "model", "dbqa", "dbqa.wordTranslation.e2f");
+            string wordMT_f2eFile = Path.Combine(rootFolder, "model", "dbqa", "dbqa.wordTranslation.f2e");
+
+            string WO_resultFile = Path.Combine(rootFolder, "evaltool", "dbqa", "train.QApair.WordOverlap.score");
+            string AWE_resultFile = Path.Combine(rootFolder, "evaltool", "dbqa", "train.QApair.AveWordEmbedding.score");
+            string PP_resultFile = Path.Combine(rootFolder, "evaltool", "dbqa", "train.QApair.Paraphrase.score");
+            string MT_resultFile = Path.Combine(rootFolder, "evaltool", "dbqa", "train.QApair.MachineTranslation.score");
+            string ALL_resultFile = Path.Combine(rootFolder, "evaltool", "dbqa", "train.QApair.WeightingAll.score");
+
+            Tokenizer tokenizer = new Tokenizer(rootFolder + @"\tokenizer\ICTCLAS2016\");
+
+            ////////QApairFile1, stopwordFile1, word2vecFile1
+            //sample method 1 - word overlap
+            Console.WriteLine("\nWord Overlap");
+            WordOverlapPredictor WOpredictor = new WordOverlapPredictor(tokenizer, stopwordFile1);
+            GenerateResultFile(QApairFile1, WO_resultFile, WOpredictor);
+            Evaluator.Evaluate(QApairFile1, WO_resultFile);
+
+            ////sample method 2 - average word embedding similarity
+            //Console.WriteLine("\nAverage Word Embedding");
+            //WordEmbeddingPredictor AWEpredictor = new WordEmbeddingPredictor(tokenizer, word2vecFile1);
+            //GenerateResultFile(QApairFile1, AWE_resultFile, AWEpredictor);
+            //Evaluator.Evaluate(QApairFile1, AWE_resultFile);
+
+            //sample method 3 - paraphrase model
+            Console.WriteLine("\nParaphrase");
+            ParaphrasePredictor PPpredictor = new ParaphrasePredictor(tokenizer, paraphraseFile);
+            GenerateResultFile(QApairFile1, PP_resultFile, PPpredictor);
+            Evaluator.Evaluate(QApairFile1, PP_resultFile);
+
+            //sample method 4 - machine translation model
+            //Console.WriteLine("\nMachine Translation");
+            //WordTranslationPredictor MTpredictor = new WordTranslationPredictor(tokenizer, wordMT_f2eFile, wordMT_e2fFile);
+            //GenerateResultFile(QApairFile1, MT_resultFile, MTpredictor);
+            //Evaluator.Evaluate(QApairFile1, MT_resultFile);
+
+            //dear participating teams, please try to improve, add, and combine new features and models for better results
+            //all models/features above are just toy examples :)
+
+            int filepath = 0;
+            double x = 0.1, y = 0.9;
+            for (; x + y <= 1 && y > 0; x += 0.05, y = 1 - x)
+            {
+                ALL_resultFile = Path.Combine(rootFolder, "evaltool", "dbqa", "train.QApair.WeightingAll.score" + Convert.ToString(filepath));
+                ComputingWeightFile(WO_resultFile, PP_resultFile, ALL_resultFile, x, y);
+                Evaluator.Evaluate(QApairFile1, ALL_resultFile);
+
+                filepath++;
+            }
+
+            Console.WriteLine("\n~Good luck~");
+            Console.ReadKey();
+        }
+
+        //先不考虑第二、四部分
+        static void ComputingWeightFile(string file1, string file2, string fileAll, double x, double y)
+        {
+            using (StreamWriter all = new StreamWriter(fileAll))
+            {
+                using (StreamReader first = new StreamReader(file1))
+                {
+                    using (StreamReader second = new StreamReader(file2))
+                    {
+                        while (!first.EndOfStream && !second.EndOfStream)
+                        {
+                            var line1 = first.ReadLine();
+                            var line2 = second.ReadLine();
+                            var parts = line1.Split('\t');
+
+                            double weightScore = 0;
+
+                            weightScore = Convert.ToDouble(line1) * x + Convert.ToDouble(line2) * y;
+                            all.WriteLine(weightScore);
+                            //改路径-》打开文件
+                        }
+                    }
+                }
+            }
+        }
+
+
+        static void GenerateResultFile(string iFile, string oFile, IPredictor predictor)
+        {
+            using (StreamWriter sw = new StreamWriter(oFile))
+            {
+                using (StreamReader sr = new StreamReader(iFile))
+                {
+                    while (!sr.EndOfStream)
+                    {
+                        var line = sr.ReadLine();
+                        var parts = line.Split('\t');
+
+                        //012->120
+                        var question = parts[1];
+                        var answer = parts[2];
+
+                        var score = predictor.GetSimilarity(question, answer);
+
+                        sw.WriteLine(score);
+                    }
+                }
+            }
+        }
+    }
+}
